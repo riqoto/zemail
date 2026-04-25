@@ -3,7 +3,8 @@ export type EventStatus = 'active' | 'upcoming' | 'past'
 export interface Event {
   id: string
   name: string
-  date: string
+  start_date: string
+  end_date: string
   location: string
   status: EventStatus
   attendeeCount: number
@@ -34,6 +35,12 @@ export interface EmailBlock {
   id: string
   type: 'header' | 'text' | 'button' | 'image' | 'footer'
   content: string
+  styles?: {
+    fontSize?: number
+    textAlign?: "left" | "center" | "right" | "justify"
+    color?: string
+  }
+  url?: string
 }
 
 export interface Campaign {
@@ -52,7 +59,8 @@ export const mockEvents: Event[] = [
   {
     id: '1',
     name: 'Tech Conference 2026',
-    date: '2026-05-15',
+    start_date: '2026-05-15T09:00:00Z',
+    end_date: '2026-05-16T18:00:00Z',
     location: 'San Francisco, CA',
     status: 'active',
     attendeeCount: 234,
@@ -61,7 +69,8 @@ export const mockEvents: Event[] = [
   {
     id: '2',
     name: 'Product Launch Summit',
-    date: '2026-06-20',
+    start_date: '2026-06-20T10:00:00Z',
+    end_date: '2026-06-20T16:00:00Z',
     location: 'New York, NY',
     status: 'upcoming',
     attendeeCount: 156,
@@ -70,7 +79,8 @@ export const mockEvents: Event[] = [
   {
     id: '3',
     name: 'Developer Workshop',
-    date: '2026-04-10',
+    start_date: '2026-04-10T09:00:00Z',
+    end_date: '2026-04-12T17:00:00Z',
     location: 'Austin, TX',
     status: 'past',
     attendeeCount: 89,
@@ -79,7 +89,8 @@ export const mockEvents: Event[] = [
   {
     id: '4',
     name: 'Marketing Masterclass',
-    date: '2026-07-05',
+    start_date: '2026-07-05T13:00:00Z',
+    end_date: '2026-07-05T18:00:00Z',
     location: 'Chicago, IL',
     status: 'upcoming',
     attendeeCount: 120,
@@ -88,7 +99,8 @@ export const mockEvents: Event[] = [
   {
     id: '5',
     name: 'Startup Networking Night',
-    date: '2026-03-22',
+    start_date: '2026-03-22T19:00:00Z',
+    end_date: '2026-03-22T22:00:00Z',
     location: 'Seattle, WA',
     status: 'past',
     attendeeCount: 67,
@@ -115,10 +127,24 @@ export const mockTemplates: EmailTemplate[] = [
     name: 'Event Reminder',
     subject: 'Don\'t forget: {{event_name}} is coming up!',
     blocks: [
-      { id: '1', type: 'header', content: 'Event Reminder' },
-      { id: '2', type: 'text', content: 'Hi {{name}}, we wanted to remind you about the upcoming event.' },
-      { id: '3', type: 'button', content: 'View Event Details' },
-      { id: '4', type: 'footer', content: 'Best regards, The EventMail Team' }
+      {
+        id: '1',
+        type: 'header',
+        content: 'Event Reminder',
+        styles: { fontSize: 24, textAlign: 'center', color: '#000000' }
+      },
+      {
+        id: '1-2',
+        type: 'text',
+        content: 'We are excited to have you at {{event_name}}.',
+        styles: { fontSize: 16, textAlign: 'left', color: '#4b5563' }
+      },
+      {
+        id: '1-3',
+        type: 'button',
+        content: 'View Details',
+        styles: { fontSize: 16, textAlign: 'center', color: '#ffffff' }
+      }
     ],
     createdAt: '2026-04-01'
   },

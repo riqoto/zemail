@@ -8,8 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ResponsiveModal } from '@/components/ui/responsive-modal'
-import { Spinner } from '@/components/ui/spinner'
-import { Plus, Calendar, MapPin, Trash2 } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Plus, Calendar, MapPin, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Select,
@@ -20,7 +20,12 @@ import {
 } from '@/components/ui/select'
 import type { Event, EventStatus } from '@/lib/types'
 
-const fetcher = (url: string) => fetch(url).then(res => res.json())
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'An error occurred while fetching the data.')
+  return json
+}
 
 const statusOrder: Record<EventStatus, number> = { active: 0, upcoming: 1, past: 2 }
 const statusStyles: Record<EventStatus, string> = {
@@ -36,20 +41,21 @@ export function EventsView() {
   const [isSaving, setIsSaving] = React.useState(false)
   const [formData, setFormData] = React.useState({
     name: '',
-    date: '',
+    start_date: '',
+    end_date: '',
     location: '',
     status: 'upcoming' as EventStatus,
     description: '',
   })
 
   const sortedEvents = React.useMemo(() => {
-    if (!events) return []
+    if (!Array.isArray(events)) return []
     return [...events].sort((a, b) => statusOrder[a.status] - statusOrder[b.status])
   }, [events])
 
   const openCreateModal = () => {
     setEditingEvent(null)
-    setFormData({ name: '', date: '', location: '', status: 'upcoming', description: '' })
+    setFormData({ name: '', start_date: '', end_date: '', location: '', status: 'upcoming', description: '' })
     setModalOpen(true)
   }
 
@@ -61,7 +67,8 @@ export function EventsView() {
     setEditingEvent(event)
     setFormData({
       name: event.name,
-      date: event.date,
+      start_date: event.start_date.slice(0, 16), // local datetime string
+      end_date: event.end_date.slice(0, 16),
       location: event.location,
       status: event.status,
       description: event.description || '',
@@ -70,7 +77,7 @@ export function EventsView() {
   }
 
   const handleSave = async () => {
-    if (!formData.name || !formData.date || !formData.location) {
+    if (!formData.name || !formData.start_date || !formData.end_date || !formData.location) {
       toast.error('Please fill in all required fields')
       return
     }
@@ -105,7 +112,7 @@ export function EventsView() {
 
   const handleDelete = async () => {
     if (!editingEvent) return
-    
+
     setIsSaving(true)
     try {
       const res = await fetch(`/api/events/${editingEvent.id}`, { method: 'DELETE' })
@@ -120,14 +127,9 @@ export function EventsView() {
     }
   }
 
-  if (error) {
-    return (
-      <div className="p-4 md:p-6">
-        <div className="text-center py-8 text-destructive">Failed to load events</div>
-      </div>
-    )
-  }
-
+  // Treat error as an empty state so the user can still add events
+  const isEmptyOrError = error || sortedEvents.length === 0
+  console.log(error)
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div>
@@ -136,8 +138,22 @@ export function EventsView() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Spinner className="h-8 w-8" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-48 w-full rounded-xl" />
+        </div>
+      ) : isEmptyOrError ? (
+        <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-border rounded-lg bg-card/50">
+          <div className="h-16 w-16 mb-4 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+            <Calendar className="h-8 w-8" />
+          </div>
+          <h3 className="text-lg font-medium text-foreground mb-1">No events found</h3>
+          <p className="text-sm text-muted-foreground mb-6">Get started by creating your very first event.</p>
+          <Button onClick={openCreateModal} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add New Event
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -162,19 +178,25 @@ export function EventsView() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-2">
                   <CardTitle className="text-lg line-clamp-1">{event.name}</CardTitle>
-                  <Badge variant="secondary" className={statusStyles[event.status]}>
+                  <Badge variant="secondary" className={statusStyles[event.status] + "flex items-center"}>
+                    {event.status == "active" ? <span className="relative flex h-1.5 w-1.5 mr-1">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                    </span> : null}
                     {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
                   </Badge>
                 </div>
                 <CardDescription className="line-clamp-2">{event.description}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <CardContent className="flex flex-col gap-1.5 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  <span>{new Date(event.date).toLocaleDateString()}</span>
+                  <Calendar className="h-4 w-4 shrink-0" />
+                  <span>
+                    {new Date(event.start_date).toLocaleDateString()} - {new Date(event.end_date).toLocaleDateString()}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
+                  <MapPin className="h-4 w-4 shrink-0" />
                   <span className="line-clamp-1">{event.location}</span>
                 </div>
               </CardContent>
@@ -198,7 +220,7 @@ export function EventsView() {
             )}
             <div className="flex-1" />
             <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? <Spinner className="h-4 w-4 mr-2" /> : null}
+              {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {editingEvent ? 'Save Changes' : 'Create Event'}
             </Button>
           </div>
@@ -214,14 +236,25 @@ export function EventsView() {
               placeholder="Enter event name"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="date">Date *</Label>
-            <Input
-              id="date"
-              type="date"
-              value={formData.date}
-              onChange={e => setFormData(prev => ({ ...prev, date: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="start_date">Start Date & Time *</Label>
+              <Input
+                id="start_date"
+                type="datetime-local"
+                value={formData.start_date}
+                onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end_date">End Date & Time *</Label>
+              <Input
+                id="end_date"
+                type="datetime-local"
+                value={formData.end_date}
+                onChange={e => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="location">Location *</Label>

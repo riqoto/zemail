@@ -3,7 +3,8 @@ export type EventStatus = "active" | "upcoming" | "past"
 export interface Event {
   id: string
   name: string
-  date: string
+  start_date: string
+  end_date: string
   location: string
   status: EventStatus
   description: string | null
@@ -30,6 +31,12 @@ export interface EmailBlock {
   id: string
   type: "header" | "text" | "button" | "image" | "footer"
   content: string
+  styles?: {
+    fontSize?: number
+    textAlign?: "left" | "center" | "right" | "justify"
+    color?: string
+  }
+  url?: string
 }
 
 export interface EmailTemplate {
@@ -39,6 +46,23 @@ export interface EmailTemplate {
   blocks: EmailBlock[]
   created_at: string
   updated_at: string
+}
+
+export interface ASTStyle {
+  color?: string
+  size?: number
+  textAlign?: "left" | "center" | "right" | "justify"
+}
+
+export interface ASTBlock {
+  id: string // format: block_type_[content_as_base64]
+  style: ASTStyle
+  url?: string
+}
+
+export interface EmailAST {
+  id: string // format: event_id_templatename
+  block: ASTBlock[]
 }
 
 export interface SentEmail {

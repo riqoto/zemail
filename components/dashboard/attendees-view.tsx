@@ -23,64 +23,178 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { FileText, Eye, X } from 'lucide-react'
-import { mockAttendees, mockEvents, type Attendee } from '@/lib/mock-data'
+import { Skeleton } from '@/components/ui/skeleton'
+import { FileText, Eye, Upload, Search, Plus, Loader2 } from 'lucide-react'
+import useSWR from 'swr'
+import type { Attendee, Event } from '@/lib/types'
+
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'An error occurred while fetching the data.')
+  return json
+}
 
 export function AttendeesView() {
   const [selectedEventId, setSelectedEventId] = React.useState<string>('all')
-  const [attendees, setAttendees] = React.useState<Attendee[]>(mockAttendees)
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const { data: attendeesData, isLoading: isAttendeesLoading, mutate: mutateAttendees } = useSWR<Attendee[]>('/api/attendees', fetcher)
+  const { data: eventsData } = useSWR<Event[]>('/api/events', fetcher)
+  
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const modalFileInputRef = React.useRef<HTMLInputElement>(null)
   const [editModalOpen, setEditModalOpen] = React.useState(false)
   const [pdfModalOpen, setPdfModalOpen] = React.useState(false)
   const [editingAttendee, setEditingAttendee] = React.useState<Attendee | null>(null)
-  const [viewingPdf, setViewingPdf] = React.useState<string | null>(null)
+  const [viewingPdf, setViewingPdf] = React.useState<{ url: string; name: string } | null>(null)
+  const [isSaving, setIsSaving] = React.useState(false)
+  const [isUploading, setIsUploading] = React.useState(false)
+  
   const [formData, setFormData] = React.useState({
-    name: '',
-    surname: '',
+    first_name: '',
+    last_name: '',
     phone: '',
     title: '',
     email: '',
+    event_id: '',
+    attachment_url: '',
+    attachment_name: ''
   })
 
-  const filteredAttendees =
-    selectedEventId === 'all'
-      ? attendees
-      : attendees.filter(a => a.eventId === selectedEventId)
+  const filteredAttendees = (attendeesData || []).filter(a => {
+    const matchesEvent = selectedEventId === 'all' || a.event_id === selectedEventId
+    const query = searchQuery.toLowerCase()
+    const matchesSearch = !query || 
+      (a.first_name || '').toLowerCase().includes(query) || 
+      (a.last_name || '').toLowerCase().includes(query) || 
+      (a.email || '').toLowerCase().includes(query)
+    
+    return matchesEvent && matchesSearch
+  })
 
   const getEventName = (eventId: string) => {
-    return mockEvents.find(e => e.id === eventId)?.name || 'Unknown Event'
+    return eventsData?.find(e => e.id === eventId)?.name || 'Unknown Event'
   }
 
   const openEditModal = (attendee: Attendee) => {
     setEditingAttendee(attendee)
     setFormData({
-      name: attendee.name,
-      surname: attendee.surname,
-      phone: attendee.phone,
-      title: attendee.title,
-      email: attendee.email,
+      first_name: attendee.first_name || '',
+      last_name: attendee.last_name || '',
+      phone: attendee.phone || '',
+      title: attendee.title || '',
+      email: attendee.email || '',
+      event_id: attendee.event_id || '',
+      attachment_url: attendee.attachment_url || '',
+      attachment_name: attendee.attachment_name || ''
     })
     setEditModalOpen(true)
   }
 
-  const openPdfViewer = (attachmentName: string) => {
-    setViewingPdf(attachmentName)
+  const openPdfViewer = (url: string, name: string) => {
+    setViewingPdf({ url, name })
     setPdfModalOpen(true)
   }
 
-  const handleSave = () => {
-    if (!editingAttendee) return
-    if (!formData.name || !formData.email) {
-      toast.error('Name and email are required')
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    const maxSize = 50 * 1024 * 1024
+    if (file.size > maxSize) {
+      toast.error('File size exceeds the 50MB limit')
       return
     }
-    setAttendees(prev =>
-      prev.map(a =>
-        a.id === editingAttendee.id ? { ...a, ...formData } : a
-      )
-    )
-    toast.success('Attendee updated successfully')
-    setEditModalOpen(false)
+
+    const type = file.type
+    if (type !== 'text/csv' && !type.includes('spreadsheetml') && !type.includes('excel')) {
+      toast.error('Only CSV or Excel (XLSX) files are allowed for import')
+      return
+    }
+
+    toast.success(`${file.name} imported successfully (mock)`)
+    
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
+
+  const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsUploading(true)
+    try {
+       const form = new FormData()
+       form.append('file', file)
+       const res = await fetch('/api/upload', {
+         method: 'POST',
+         body: form
+       })
+       if (!res.ok) throw new Error('Upload failed')
+       const data = await res.json()
+       setFormData(prev => ({ ...prev, attachment_url: data.url, attachment_name: data.name }))
+       toast.success('File uploaded successfully')
+    } catch (err) {
+       toast.error('Failed to upload file')
+    } finally {
+       setIsUploading(false)
+       if (modalFileInputRef.current) modalFileInputRef.current.value = ''
+    }
+  }
+
+  const handleSave = async () => {
+    if (!formData.first_name || !formData.email || !formData.event_id) {
+      toast.error('First name, email and event are required')
+      return
+    }
+    
+    setIsSaving(true)
+    try {
+      if (editingAttendee) {
+        const res = await fetch(`/api/attendees/${editingAttendee.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        })
+        if (!res.ok) throw new Error('Failed to update attendee')
+        toast.success('Attendee updated successfully')
+      } else {
+        const res = await fetch('/api/attendees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to create attendee')
+        toast.success('Attendee created successfully')
+      }
+      mutateAttendees()
+      setEditModalOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!editingAttendee) return
+    if (!confirm('Are you sure you want to delete this attendee?')) return
+
+    setIsSaving(true)
+    try {
+      const res = await fetch(`/api/attendees/${editingAttendee.id}`, {
+        method: 'DELETE'
+      })
+      if (!res.ok) throw new Error('Failed to delete attendee')
+      toast.success('Attendee deleted successfully')
+      mutateAttendees()
+      setEditModalOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -89,20 +203,48 @@ export function AttendeesView() {
           <h1 className="text-2xl font-semibold text-foreground">Attendees</h1>
           <p className="text-muted-foreground">View and manage event attendees</p>
         </div>
-        <div className="w-full sm:w-64">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name or email..."
+              className="pl-8"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
           <Select value={selectedEventId} onValueChange={setSelectedEventId}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full sm:w-48">
               <SelectValue placeholder="Filter by event" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Events</SelectItem>
-              {mockEvents.map(event => (
+              {eventsData?.map(event => (
                 <SelectItem key={event.id} value={event.id}>
                   {event.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
+            className="hidden" 
+          />
+          <Button variant="outline" className="w-full sm:w-auto gap-2" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="h-4 w-4" />
+            Import
+          </Button>
+          <Button className="w-full sm:w-auto gap-2" onClick={() => {
+            setEditingAttendee(null)
+            setFormData({ first_name: '', last_name: '', phone: '', title: '', email: '', event_id: selectedEventId === 'all' ? '' : selectedEventId, attachment_url: '', attachment_name: '' })
+            setEditModalOpen(true)
+          }}>
+            <Plus className="h-4 w-4" />
+            Add Attendee
+          </Button>
         </div>
       </div>
 
@@ -125,10 +267,20 @@ export function AttendeesView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAttendees.length === 0 ? (
+                {isAttendeesLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+                      <TableCell className="hidden sm:table-cell"><Skeleton className="h-6 w-24" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-6 w-24" /></TableCell>
+                      <TableCell className="hidden lg:table-cell"><Skeleton className="h-6 w-40" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredAttendees.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                      No attendees found
+                      No attendees found matching your criteria.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -140,7 +292,7 @@ export function AttendeesView() {
                     >
                       <TableCell className="font-medium">
                         <div>
-                          {attendee.name} {attendee.surname}
+                          {attendee.first_name} {attendee.last_name}
                         </div>
                         <div className="text-sm text-muted-foreground sm:hidden">
                           {attendee.phone}
@@ -150,18 +302,18 @@ export function AttendeesView() {
                       <TableCell className="hidden md:table-cell">{attendee.title}</TableCell>
                       <TableCell className="hidden lg:table-cell">{attendee.email}</TableCell>
                       <TableCell onClick={e => e.stopPropagation()}>
-                        {attendee.attachment ? (
+                        {attendee.attachment_url ? (
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary" className="gap-1">
+                            <Badge variant="secondary" className="gap-1 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
                               <FileText className="h-3 w-3" />
-                              <span className="hidden sm:inline">{attendee.attachmentName}</span>
+                              <span className="hidden sm:inline">{attendee.attachment_name || 'File'}</span>
                               <span className="sm:hidden">File</span>
                             </Badge>
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => openPdfViewer(attendee.attachmentName || '')}
+                              onClick={() => openPdfViewer(attendee.attachment_url || '', attendee.attachment_name || '')}
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
@@ -182,26 +334,51 @@ export function AttendeesView() {
       <ResponsiveModal
         open={editModalOpen}
         onOpenChange={setEditModalOpen}
-        title="Edit Attendee"
-        description="Update attendee information"
-        footer={<Button onClick={handleSave}>Save Changes</Button>}
+        title={editingAttendee ? "Edit Attendee" : "Add Attendee"}
+        description={editingAttendee ? "Update attendee information" : "Add a new attendee to your event"}
+        footer={
+          <div className="flex gap-2 w-full">
+            {editingAttendee && (
+              <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>
+                Delete
+              </Button>
+            )}
+            <div className="flex-1" />
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {editingAttendee ? 'Save Changes' : 'Create Attendee'}
+            </Button>
+          </div>
+        }
       >
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto px-1">
+          <div className="space-y-2">
+            <Label htmlFor="event_id">Event *</Label>
+            <Select value={formData.event_id} onValueChange={v => setFormData(p => ({ ...p, event_id: v }))}>
+              <SelectTrigger id="event_id"><SelectValue placeholder="Select event..." /></SelectTrigger>
+              <SelectContent>
+                {eventsData?.map(event => (
+                  <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="name">First Name *</Label>
+              <Label htmlFor="first_name">First Name *</Label>
               <Input
-                id="name"
-                value={formData.name}
-                onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                id="first_name"
+                value={formData.first_name}
+                onChange={e => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="surname">Last Name</Label>
+              <Label htmlFor="last_name">Last Name</Label>
               <Input
-                id="surname"
-                value={formData.surname}
-                onChange={e => setFormData(prev => ({ ...prev, surname: e.target.value }))}
+                id="last_name"
+                value={formData.last_name}
+                onChange={e => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
               />
             </div>
           </div>
@@ -223,13 +400,46 @@ export function AttendeesView() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
+            <Label htmlFor="title">Title / Role</Label>
             <Input
               id="title"
               value={formData.title}
               onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))}
             />
           </div>
+          
+          <div className="space-y-2 pt-2 border-t mt-4">
+            <Label>Attendee Specific Attachment</Label>
+            <div className="text-xs text-muted-foreground mb-2">Upload a specific file for this attendee (e.g. ticket PDF, itinerary)</div>
+            
+            <input 
+              type="file" 
+              ref={modalFileInputRef} 
+              onChange={handleAttachmentUpload} 
+              className="hidden" 
+            />
+            
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                className="gap-2" 
+                onClick={(e) => { e.preventDefault(); modalFileInputRef.current?.click(); }}
+                disabled={isUploading}
+              >
+                {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {isUploading ? 'Uploading...' : 'Upload File'}
+              </Button>
+              {formData.attachment_name && (
+                <div className="flex items-center gap-2 ml-2">
+                  <Badge variant="secondary" className="max-w-[200px] truncate">
+                    {formData.attachment_name}
+                  </Badge>
+                  <Button variant="ghost" size="sm" onClick={() => setFormData(p => ({ ...p, attachment_url: '', attachment_name: '' }))}>Remove</Button>
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
       </ResponsiveModal>
 
@@ -237,18 +447,21 @@ export function AttendeesView() {
         open={pdfModalOpen}
         onOpenChange={setPdfModalOpen}
         title="Document Viewer"
-        description={viewingPdf || 'Viewing attachment'}
+        description={viewingPdf?.name || 'Viewing attachment'}
       >
-        <div className="py-4">
-          <div className="bg-muted rounded-lg p-8 flex flex-col items-center justify-center min-h-[200px]">
-            <FileText className="h-16 w-16 text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground text-center">
-              PDF viewer simulation for: <strong>{viewingPdf}</strong>
-            </p>
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              In production, this would fetch from Supabase Storage
-            </p>
-          </div>
+        <div className="py-2 h-[60vh] min-h-[400px]">
+          {viewingPdf?.url ? (
+            <iframe
+              src={viewingPdf.url}
+              className="w-full h-full rounded-md border-0 bg-white"
+              title={viewingPdf.name}
+            />
+          ) : (
+            <div className="bg-muted h-full rounded-lg flex flex-col items-center justify-center">
+              <FileText className="h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-sm text-muted-foreground">Document not available</p>
+            </div>
+          )}
         </div>
       </ResponsiveModal>
     </div>

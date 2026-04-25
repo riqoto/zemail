@@ -1,50 +1,12 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { Resend } from "resend"
+import { decodeFromAST, renderEmailHtml } from "@/lib/ast"
+import type { EmailBlock } from "@/lib/types"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-interface EmailBlock {
-  id: string
-  type: "header" | "text" | "button" | "image" | "footer"
-  content: string
-}
 
-function renderEmailHtml(blocks: EmailBlock[], attendeeName: string): string {
-  const renderedBlocks = blocks.map((block) => {
-    const content = block.content.replace("{{name}}", attendeeName)
-    
-    switch (block.type) {
-      case "header":
-        return `<h1 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #1a1a2e;">${content}</h1>`
-      case "text":
-        return `<p style="font-size: 16px; line-height: 1.6; margin-bottom: 16px; color: #333;">${content}</p>`
-      case "button":
-        return `<a href="#" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500; margin: 16px 0;">${content}</a>`
-      case "image":
-        return `<img src="${content}" alt="Email image" style="max-width: 100%; height: auto; margin: 16px 0; border-radius: 8px;" />`
-      case "footer":
-        return `<footer style="font-size: 12px; color: #666; margin-top: 32px; padding-top: 16px; border-top: 1px solid #eee;">${content}</footer>`
-      default:
-        return `<p>${content}</p>`
-    }
-  })
-
-  return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      </head>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
-        <div style="background-color: white; padding: 32px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-          ${renderedBlocks.join("\n")}
-        </div>
-      </body>
-    </html>
-  `
-}
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -71,6 +33,20 @@ export async function POST(request: Request) {
     )
   }
 
+  // Fetch event
+  const { data: event, error: eventError } = await supabase
+    .from("events")
+    .select("name")
+    .eq("id", eventId)
+    .single()
+
+  if (eventError || !event) {
+    return NextResponse.json(
+      { error: "Event not found" },
+      { status: 404 }
+    )
+  }
+
   // Fetch attendees
   const { data: attendees, error: attendeesError } = await supabase
     .from("attendees")
@@ -87,18 +63,58 @@ export async function POST(request: Request) {
   const results: Array<{ email: string; success: boolean; error?: string; resendId?: string }> = []
 
   for (const attendee of attendees) {
-    const attendeeName = `${attendee.first_name} ${attendee.last_name}`
-    const subject = template.subject.replace("{{name}}", attendeeName)
-    const html = renderEmailHtml(template.blocks as EmailBlock[], attendeeName)
+    const vars = {
+      name: attendee.first_name || '',
+      surname: attendee.last_name || '',
+      event_name: event.name || '',
+      ticket_link: `https://zemail.io/t/${attendee.id.slice(0, 8)}`
+    }
+
+    const subject = template.subject
+      .replace(/{{name}}/g, vars.name)
+      .replace(/{{surname}}/g, vars.surname)
+      .replace(/{{event_name}}/g, vars.event_name)
+      .replace(/{{ticket_link}}/g, vars.ticket_link);
+
+    const blocksArray = Array.isArray(template.blocks) 
+      ? template.blocks as EmailBlock[] 
+      : typeof template.blocks === 'object' && template.blocks.block 
+        ? decodeFromAST(template.blocks as any)
+        : [];
+        
+    if (blocksArray.length === 0) {
+      return NextResponse.json(
+        { error: "Template has no content" },
+        { status: 422 }
+      )
+    }
+
+    const html = renderEmailHtml(blocksArray, vars)
+
+    let attachmentContent;
+    if (attendee.attachment_url?.startsWith("/uploads/")) {
+      try {
+        const fs = require('fs/promises');
+        const path = require('path');
+        const buf = await fs.readFile(path.join(process.cwd(), 'public', attendee.attachment_url));
+        attachmentContent = buf.toString('base64');
+      } catch (e) {
+        console.error("Failed to read attachment", e);
+      }
+    }
 
     try {
       const { data: emailData, error: emailError } = await resend.emails.send({
-        from: "EventMail Pro <onboarding@resend.dev>",
+        from: "Movood <info@movood.com>",
         to: attendee.email,
         subject,
         html,
         attachments: attendee.attachment_url
-          ? [{ path: attendee.attachment_url, filename: attendee.attachment_name || "attachment" }]
+          ? [{ 
+              content: attachmentContent, 
+              path: attachmentContent ? undefined : attendee.attachment_url,
+              filename: attendee.attachment_name || "attachment" 
+            }]
           : undefined,
       })
 
@@ -123,7 +139,7 @@ export async function POST(request: Request) {
       })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error"
-      
+
       await supabase.from("sent_emails").insert({
         event_id: eventId,
         template_id: templateId,

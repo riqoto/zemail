@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -16,6 +17,7 @@ import { Calendar, Users, Mail, TrendingUp, Send, MousePointer, Eye } from 'luci
 import { mockEvents, mockAttendees, mockCampaigns } from '@/lib/mock-data'
 
 export function StatsView() {
+  const [isLoading, setIsLoading] = React.useState(false) // placeholder for useSWR
   const totalEvents = mockEvents.length
   const activeEvents = mockEvents.filter(e => e.status === 'active').length
   const totalAttendees = mockAttendees.length
@@ -83,8 +85,17 @@ export function StatsView() {
               <stat.icon className={`h-4 w-4 ${stat.color}`} />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-foreground">{stat.value}</div>
-              <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
+              {isLoading ? (
+                <div className="space-y-2 pt-2">
+                  <Skeleton className="h-8 w-20" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold text-foreground">{stat.value}</div>
+                  <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
+                </>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -119,28 +130,39 @@ export function StatsView() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-muted rounded-lg text-center">
-                <div className="text-2xl font-bold text-foreground">{mockCampaigns.length}</div>
-                <div className="text-sm text-muted-foreground">Total Campaigns</div>
-              </div>
-              <div className="p-4 bg-muted rounded-lg text-center">
-                <div className="text-2xl font-bold text-foreground">
-                  {mockCampaigns.filter(c => c.status === 'sent').length}
-                </div>
-                <div className="text-sm text-muted-foreground">Sent Campaigns</div>
-              </div>
-              <div className="p-4 bg-muted rounded-lg text-center">
-                <div className="text-2xl font-bold text-foreground">
-                  {mockCampaigns.filter(c => c.status === 'scheduled').length}
-                </div>
-                <div className="text-sm text-muted-foreground">Scheduled</div>
-              </div>
-              <div className="p-4 bg-muted rounded-lg text-center">
-                <div className="text-2xl font-bold text-foreground">
-                  {mockCampaigns.filter(c => c.status === 'draft').length}
-                </div>
-                <div className="text-sm text-muted-foreground">Drafts</div>
-              </div>
+              {isLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="p-4 bg-muted rounded-lg text-center flex flex-col items-center justify-center space-y-2">
+                    <Skeleton className="h-8 w-16" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div className="p-4 bg-muted rounded-lg text-center">
+                    <div className="text-2xl font-bold text-foreground">{mockCampaigns.length}</div>
+                    <div className="text-sm text-muted-foreground">Total Campaigns</div>
+                  </div>
+                  <div className="p-4 bg-muted rounded-lg text-center">
+                    <div className="text-2xl font-bold text-foreground">
+                      {mockCampaigns.filter(c => c.status === 'sent').length}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Sent Campaigns</div>
+                  </div>
+                  <div className="p-4 bg-muted rounded-lg text-center">
+                    <div className="text-2xl font-bold text-foreground">
+                      {mockCampaigns.filter(c => c.status === 'scheduled').length}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Scheduled</div>
+                  </div>
+                  <div className="p-4 bg-muted rounded-lg text-center">
+                    <div className="text-2xl font-bold text-foreground">
+                      {mockCampaigns.filter(c => c.status === 'draft').length}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Drafts</div>
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -164,37 +186,49 @@ export function StatsView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mockCampaigns.map(campaign => (
-                  <TableRow key={campaign.id}>
-                    <TableCell className="font-medium">
-                      <div>{campaign.name}</div>
-                      <div className="text-sm text-muted-foreground sm:hidden">
-                        {campaign.recipientCount} recipients
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell">{campaign.recipientCount}</TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      {campaign.status === 'sent' ? `${campaign.openRate}%` : '-'}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      {campaign.status === 'sent' ? `${campaign.clickRate}%` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={
-                          campaign.status === 'sent'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-                            : campaign.status === 'scheduled'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
-                            : ''
-                        }
-                      >
-                        {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {isLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                      <TableCell className="hidden sm:table-cell"><Skeleton className="h-4 w-12" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-12" /></TableCell>
+                      <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-12" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  mockCampaigns.map(campaign => (
+                    <TableRow key={campaign.id}>
+                      <TableCell className="font-medium">
+                        <div>{campaign.name}</div>
+                        <div className="text-sm text-muted-foreground sm:hidden">
+                          {campaign.recipientCount} recipients
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">{campaign.recipientCount}</TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {campaign.status === 'sent' ? `${campaign.openRate}%` : '-'}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {campaign.status === 'sent' ? `${campaign.clickRate}%` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          className={
+                            campaign.status === 'sent'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : campaign.status === 'scheduled'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                              : ''
+                          }
+                        >
+                          {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>

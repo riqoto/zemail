@@ -3,11 +3,11 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   const supabase = await createClient()
-  
+
   const { data, error } = await supabase
     .from("events")
     .select("*")
-    .order("date", { ascending: false })
+
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

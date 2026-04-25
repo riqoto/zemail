@@ -23,10 +23,8 @@ export function Header({ onMenuClick }: HeaderProps) {
           <Menu className="h-5 w-5" />
         </Button>
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <Mail className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <span className="font-semibold text-lg text-foreground">EventMail Pro</span>
+          <img src="/logo_light.svg" alt="EventMail Logo" className="h-6 dark:hidden" />
+          <img src="/logo_dark.svg" alt="EventMail Logo" className="h-6 hidden dark:block" />
         </div>
       </div>
       <div className='flex h-full items-center justify-center px-4 md:px-6'>
