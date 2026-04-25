@@ -9,9 +9,8 @@ const roboto = Roboto({
   weight: ['400', '500', '700'],
 })
 export const metadata: Metadata = {
-  title: 'EventMail Pro',
-  description: 'Created with v0',
-  generator: 'v0.app',
+  title: 'zemail',
+  description: 'zemail is a tool for sending emails to your customers',
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',

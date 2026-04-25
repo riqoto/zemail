@@ -13,7 +13,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <header className="h-14 box-border border-b border-border bg-card flex items-center justify-between">
-      <div className="flex items-center gap-3 px-4 md:px-6 h-full w-64 border-r">
+      <div className="flex items-center gap-3 px-4 md:px-6 h-full w-64 md:border-r">
         <Button
           variant="ghost"
           size="icon"

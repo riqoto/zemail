@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { ResponsiveModal } from '@/components/ui/responsive-modal'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
-import { Save, AlignLeft, AlignCenter, AlignRight, AlignJustify, GripVertical, Trash2, Plus, Heading, Type, Square, Image as ImageIcon, ChevronDown, ChevronUp } from 'lucide-react'
+import { Save, AlignLeft, AlignCenter, AlignRight, AlignJustify, GripVertical, Trash2, Plus, Heading, Type, Square, Image as ImageIcon, ChevronDown, ChevronUp, Upload, Link } from 'lucide-react'
 import { type EmailBlock, type EmailTemplate, mockTemplates, mockEvents, mockAttendees } from '@/lib/mock-data'
 import {
   Select,
@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { encodeToAST } from '@/lib/ast'
+import { encodeToAST, decodeFromAST } from '@/lib/ast'
+import { writeLog } from '@/lib/logger'
 import useSWR from 'swr'
 
 const fetcher = async (url: string) => {
@@ -68,6 +69,9 @@ export function EmailBuilderView() {
   const [selectedEventId, setSelectedEventId] = React.useState<string>(mockEvents[0]?.id || '')
   const [isSaving, setIsSaving] = React.useState(false)
   const [expandedBlockId, setExpandedBlockId] = React.useState<string | null>(null)
+  const [uploadingBlockId, setUploadingBlockId] = React.useState<string | null>(null)
+  // Track whether each image block is in 'url' or 'upload' tab mode
+  const [imageInputMode, setImageInputMode] = React.useState<Record<string, 'url' | 'upload'>>({})
 
   const loadTemplate = (templateId: string) => {
     if (templateId === 'new') {
@@ -78,9 +82,23 @@ export function EmailBuilderView() {
     if (template) {
       setCurrentTemplate(template)
       setSubject(template.subject)
-      setBlocks([...template.blocks])
       setTemplateName(template.name)
       setExpandedBlockId(null)
+      setImageInputMode({})
+      // blocks is stored as an AST object from the API; decode it back to EmailBlock[]
+      try {
+        const raw = template.blocks as any
+        if (Array.isArray(raw)) {
+          setBlocks([...raw])
+        } else if (raw && raw.block) {
+          setBlocks(decodeFromAST(raw))
+        } else {
+          setBlocks([])
+        }
+      } catch (e) {
+        console.error('Failed to decode template blocks:', e)
+        setBlocks([])
+      }
     }
   }
 
@@ -110,6 +128,24 @@ export function EmailBuilderView() {
 
   const updateBlockUrl = (id: string, url: string) => {
     setBlocks(prev => prev.map(b => (b.id === id ? { ...b, url } : b)))
+  }
+
+  const handleImageUpload = async (blockId: string, file: File) => {
+    if (!file) return
+    setUploadingBlockId(blockId)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/upload', { method: 'POST', body: formData })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Upload failed')
+      updateBlockUrl(blockId, json.url)
+      toast.success('Image uploaded successfully')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload image')
+    } finally {
+      setUploadingBlockId(null)
+    }
   }
 
   const removeBlock = (id: string) => {
@@ -156,10 +192,25 @@ export function EmailBuilderView() {
       toast.success('Template saved successfully')
       setSaveOpen(false)
 
+      void writeLog({
+        log_type: 'template',
+        event_type: isExisting ? 'updated' : 'created',
+        status: 'success',
+        message: `Template "${templateName}" ${isExisting ? 'updated' : 'created'} successfully`,
+        metadata: { templateId: savedData.id, templateName, subject, blockCount: blocks.length },
+      })
+
       mutateTemplates()
       setCurrentTemplate(savedData)
     } catch (err) {
       toast.error('Could not save template. Check terminal/Network.')
+      void writeLog({
+        log_type: 'template',
+        event_type: 'failed',
+        status: 'error',
+        message: `Failed to save template "${templateName}"`,
+        metadata: { templateName, subject },
+      })
     } finally {
       setIsSaving(false)
     }
@@ -414,14 +465,108 @@ export function EmailBuilderView() {
                               </div>
                             )}
 
-                            {/* URL Inputs */}
-                            {['image', 'button'].includes(block.type) && (
+                            {/* URL / Upload for Image blocks */}
+                            {block.type === 'image' && (() => {
+                              const mode = imageInputMode[block.id] || 'url'
+                              return (
+                                <div className="space-y-2">
+                                  {/* Tab switcher */}
+                                  <div className="flex items-center gap-1 bg-muted p-0.5 rounded-md w-fit">
+                                    <button
+                                      onClick={() => setImageInputMode(prev => ({ ...prev, [block.id]: 'url' }))}
+                                      className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all ${
+                                        mode === 'url'
+                                          ? 'bg-background shadow-sm text-foreground'
+                                          : 'text-muted-foreground hover:text-foreground'
+                                      }`}
+                                    >
+                                      <Link className="h-3 w-3" />
+                                      URL
+                                    </button>
+                                    <button
+                                      onClick={() => setImageInputMode(prev => ({ ...prev, [block.id]: 'upload' }))}
+                                      className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all ${
+                                        mode === 'upload'
+                                          ? 'bg-background shadow-sm text-foreground'
+                                          : 'text-muted-foreground hover:text-foreground'
+                                      }`}
+                                    >
+                                      <Upload className="h-3 w-3" />
+                                      Upload
+                                    </button>
+                                  </div>
+
+                                  {mode === 'url' ? (
+                                    <div className="space-y-1.5">
+                                      <Label className="text-xs font-medium">Image URL</Label>
+                                      <Input
+                                        value={block.url || ''}
+                                        onChange={(e) => updateBlockUrl(block.id, e.target.value)}
+                                        placeholder="https://example.com/image.png"
+                                        className="h-9 text-sm"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      <Label className="text-xs font-medium">Upload Image</Label>
+                                      <label
+                                        htmlFor={`img-upload-${block.id}`}
+                                        className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-md cursor-pointer transition-colors ${
+                                          uploadingBlockId === block.id
+                                            ? 'border-primary/50 bg-primary/5 cursor-wait'
+                                            : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                                        }`}
+                                      >
+                                        {uploadingBlockId === block.id ? (
+                                          <>
+                                            <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin mb-1.5" />
+                                            <span className="text-xs text-muted-foreground">Uploading...</span>
+                                          </>
+                                        ) : block.url ? (
+                                          <>
+                                            <ImageIcon className="h-5 w-5 text-primary mb-1" />
+                                            <span className="text-xs text-primary font-medium">Image uploaded</span>
+                                            <span className="text-[10px] text-muted-foreground mt-0.5">Click to replace</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Upload className="h-5 w-5 text-muted-foreground mb-1" />
+                                            <span className="text-xs text-muted-foreground">Click to upload</span>
+                                            <span className="text-[10px] text-muted-foreground/70 mt-0.5">PNG, JPG, GIF, WebP</span>
+                                          </>
+                                        )}
+                                        <input
+                                          id={`img-upload-${block.id}`}
+                                          type="file"
+                                          accept="image/*"
+                                          className="sr-only"
+                                          disabled={uploadingBlockId === block.id}
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0]
+                                            if (file) handleImageUpload(block.id, file)
+                                            e.target.value = ''
+                                          }}
+                                        />
+                                      </label>
+                                      {block.url && (
+                                        <p className="text-[10px] text-muted-foreground truncate" title={block.url}>
+                                          {block.url}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
+
+                            {/* URL Input for Button blocks */}
+                            {block.type === 'button' && (
                               <div className="space-y-1.5">
                                 <Label className="text-xs font-medium">Link URL</Label>
                                 <Input
                                   value={block.url || ''}
                                   onChange={(e) => updateBlockUrl(block.id, e.target.value)}
-                                  placeholder={block.type === 'image' ? "https://example.com/image.png" : "https://example.com/link"}
+                                  placeholder="https://example.com/link"
                                   className="h-9 text-sm"
                                 />
                               </div>

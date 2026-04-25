@@ -31,6 +31,7 @@ import { toast } from 'sonner'
 import { Send, FileText, Loader2, Search, X } from 'lucide-react'
 import useSWR from 'swr'
 import type { Event, Attendee, EmailTemplate } from '@/lib/types'
+import { writeLog } from '@/lib/logger'
 
 const fetcher = async (url: string) => {
   const res = await fetch(url)
@@ -138,15 +139,44 @@ export function EmailSenderView() {
         throw new Error(data.error || 'Failed to send emails')
       }
 
-      toast.success(`Emails sent to ${data.summary?.sent || selectedAttendees.size} recipients`)
+      const sentCount = data.summary?.sent ?? selectedAttendees.size
+      const failedCount = data.summary?.failed ?? 0
 
-      if (data.summary?.failed > 0) {
-        toast.error(`Failed to send ${data.summary.failed} emails`)
+      toast.success(`Emails sent to ${sentCount} recipients`)
+
+      if (failedCount > 0) {
+        toast.error(`Failed to send ${failedCount} emails`)
       }
+
+      void writeLog({
+        log_type: 'email',
+        event_type: 'sent',
+        status: failedCount === 0 ? 'success' : 'warning',
+        message: `Bulk send: ${sentCount} sent, ${failedCount} failed`,
+        metadata: {
+          eventId: selectedEventId,
+          templateId: selectedTemplateId,
+          recipientCount: selectedAttendees.size,
+          sent: sentCount,
+          failed: failedCount,
+        },
+      })
 
       setSelectedAttendees(new Set())
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'An error occurred')
+      const msg = err instanceof Error ? err.message : 'An error occurred'
+      toast.error(msg)
+      void writeLog({
+        log_type: 'email',
+        event_type: 'failed',
+        status: 'error',
+        message: msg,
+        metadata: {
+          eventId: selectedEventId,
+          templateId: selectedTemplateId,
+          recipientCount: selectedAttendees.size,
+        },
+      })
     } finally {
       setIsSending(false)
     }

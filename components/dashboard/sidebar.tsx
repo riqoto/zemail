@@ -2,9 +2,9 @@
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Calendar, Users, FileText, Send, BarChart3, X } from 'lucide-react'
+import { Calendar, Users, FileText, Send, BarChart3, X, ScrollText } from 'lucide-react'
 
-export type View = 'events' | 'attendees' | 'email-builder' | 'email-sender' | 'stats'
+export type View = 'events' | 'attendees' | 'email-builder' | 'email-sender' | 'stats' | 'logs'
 
 interface SidebarProps {
   currentView: View
@@ -19,6 +19,7 @@ const navItems: { view: View; label: string; icon: React.ElementType }[] = [
   { view: 'email-builder', label: 'Email Builder', icon: FileText },
   { view: 'email-sender', label: 'Email Sender', icon: Send },
   { view: 'stats', label: 'Stats', icon: BarChart3 },
+  { view: 'logs', label: 'Logs', icon: ScrollText },
 ]
 
 export function Sidebar({ currentView, onViewChange, open, onClose }: SidebarProps) {

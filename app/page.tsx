@@ -8,6 +8,7 @@ import { AttendeesView } from '@/components/dashboard/attendees-view'
 import { EmailBuilderView } from '@/components/dashboard/email-builder-view'
 import { EmailSenderView } from '@/components/dashboard/email-sender-view'
 import { StatsView } from '@/components/dashboard/stats-view'
+import { LogsView } from '@/components/dashboard/logs-view'
 
 export default function DashboardPage() {
   const [currentView, setCurrentView] = React.useState<View>('events')
@@ -25,6 +26,8 @@ export default function DashboardPage() {
         return <EmailSenderView />
       case 'stats':
         return <StatsView />
+      case 'logs':
+        return <LogsView />
       default:
         return <EventsView />
     }

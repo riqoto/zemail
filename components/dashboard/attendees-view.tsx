@@ -8,6 +8,13 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ResponsiveModal } from '@/components/ui/responsive-modal'
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
+import {
   Table,
   TableBody,
   TableCell,
@@ -24,7 +31,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
-import { FileText, Eye, Upload, Search, Plus, Loader2 } from 'lucide-react'
+import { FileText, Eye, Upload, Search, Plus, Loader2, ExternalLink } from 'lucide-react'
 import useSWR from 'swr'
 import type { Attendee, Event } from '@/lib/types'
 
@@ -44,7 +51,6 @@ export function AttendeesView() {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const modalFileInputRef = React.useRef<HTMLInputElement>(null)
   const [editModalOpen, setEditModalOpen] = React.useState(false)
-  const [pdfModalOpen, setPdfModalOpen] = React.useState(false)
   const [editingAttendee, setEditingAttendee] = React.useState<Attendee | null>(null)
   const [viewingPdf, setViewingPdf] = React.useState<{ url: string; name: string } | null>(null)
   const [isSaving, setIsSaving] = React.useState(false)
@@ -93,7 +99,6 @@ export function AttendeesView() {
 
   const openPdfViewer = (url: string, name: string) => {
     setViewingPdf({ url, name })
-    setPdfModalOpen(true)
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -443,27 +448,57 @@ export function AttendeesView() {
         </div>
       </ResponsiveModal>
 
-      <ResponsiveModal
-        open={pdfModalOpen}
-        onOpenChange={setPdfModalOpen}
-        title="Document Viewer"
-        description={viewingPdf?.name || 'Viewing attachment'}
-      >
-        <div className="py-2 h-[60vh] min-h-[400px]">
-          {viewingPdf?.url ? (
-            <iframe
-              src={viewingPdf.url}
-              className="w-full h-full rounded-md border-0 bg-white"
-              title={viewingPdf.name}
-            />
-          ) : (
-            <div className="bg-muted h-full rounded-lg flex flex-col items-center justify-center">
-              <FileText className="h-16 w-16 text-muted-foreground mb-4" />
-              <p className="text-sm text-muted-foreground">Document not available</p>
+      {/* PDF Viewer Drawer */}
+      <Sheet open={!!viewingPdf} onOpenChange={(open) => !open && setViewingPdf(null)}>
+        <SheetContent
+          side="right"
+          className="w-full sm:max-w-2xl flex flex-col p-0 gap-0"
+        >
+          <SheetHeader className="px-5 py-4 border-b shrink-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="h-8 w-8 rounded-md bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <FileText className="h-4 w-4 text-blue-500" />
+                </div>
+                <div className="min-w-0">
+                  <SheetTitle className="text-sm leading-tight truncate">
+                    {viewingPdf?.name || 'Document'}
+                  </SheetTitle>
+                  <SheetDescription className="text-xs mt-0.5">Attachment preview</SheetDescription>
+                </div>
+              </div>
+              {viewingPdf?.url && (
+                <a
+                  href={viewingPdf.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0"
+                >
+                  <Button variant="outline" size="sm" className="gap-1.5 h-8">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open
+                  </Button>
+                </a>
+              )}
             </div>
-          )}
-        </div>
-      </ResponsiveModal>
+          </SheetHeader>
+
+          <div className="flex-1 min-h-0 p-4">
+            {viewingPdf?.url ? (
+              <iframe
+                src={viewingPdf.url}
+                className="w-full h-full rounded-lg border bg-white"
+                title={viewingPdf?.name}
+              />
+            ) : (
+              <div className="bg-muted h-full rounded-lg flex flex-col items-center justify-center">
+                <FileText className="h-16 w-16 text-muted-foreground mb-4" />
+                <p className="text-sm text-muted-foreground">Document not available</p>
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
